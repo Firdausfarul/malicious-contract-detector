@@ -1,7 +1,8 @@
-import { Canister, ic, query, text,int32, update, Void, Principal, Record, Vec, StableBTreeMap , bool, nat} from 'azle';
+import { Canister, ic, query, text,int32, update, Void, Principal, Record, Vec, StableBTreeMap , bool, nat, AzleInt32} from 'azle';
 
 // use hardcoded admin for now
-let admin = Principal.fromText("2vxsx-fae");
+let admin : text = "2vxsx-fae";
+let threshold : int32 = 100;    
 
 const Entry = Record({
     //list of who submitted the report
@@ -10,7 +11,6 @@ const Entry = Record({
 });
 
 // user reputation, the higher the better, user report will be based weighted on this
-// to prevent spam / botting
 let reputation = StableBTreeMap(Principal, int32 ,0);
 //base reputation is 1
 
@@ -19,8 +19,9 @@ let contract = StableBTreeMap(Principal, Entry, 1);
 
 //contract
 export default Canister({
+
     // report a contract
-    report: update([Principal], Void, (reported) => {
+    report: update([Principal], int32, (reported) => {
         if(contract.containsKey(reported)) {
             let entry = contract.get(reported).Some;
             let newWeight : int32 = reputation.containsKey(ic.caller()) ? entry.weight + reputation.get(ic.caller()).Some : entry.weight + 1;
@@ -29,6 +30,7 @@ export default Canister({
                 weight: newWeight 
             }
             contract.insert(reported, updatedUser);
+            return newWeight;
         } else {
             let newWeight : int32 = reputation.containsKey(ic.caller()) ? reputation.get(ic.caller()).Some : 1;
             const updatedUser: typeof Entry = {
@@ -36,7 +38,9 @@ export default Canister({
                 weight: newWeight
             }
             contract.insert(reported, updatedUser);
+            return newWeight;
         }
+
     }),
 
     //getter function for reputation
@@ -51,7 +55,7 @@ export default Canister({
     isMalicious: query([Principal], bool, (target) => {
         if(contract.containsKey(target)) {
             let entry = contract.get(target).Some;
-            if(entry.weight > 100) {
+            if(entry.weight > threshold) {
                 return true;
             }
         }
@@ -81,7 +85,7 @@ export default Canister({
     }),
 
     //helper function to get admin
-    getAdmin: query([], Principal, () => {
+    getAdmin: query([], text, () => {
         return admin;
     }),
 
@@ -100,13 +104,13 @@ export default Canister({
             }
         }
         //return 0 if you/sender don't have reputation 
-        return 0;
+        throw new Error("You don't have reputation");
     }),
 
     //admin function
     //set weight
-    setWeight: update([Principal, int32], Void, (target, weight) => {
-        if(ic.caller() == admin) {
+    setWeight: update([Principal, int32], int32, (target, weight) => {
+        if(ic.caller().toText() == admin) {
             if(contract.containsKey(target)) {
                 let entry = contract.get(target).Some;
                 const updatedUser: typeof Entry = {
@@ -114,22 +118,49 @@ export default Canister({
                     weight: weight
                 }
                 contract.insert(target, updatedUser);
+                return weight;
             } else {
                 const updatedUser: typeof Entry = {
                     reporter: [],
                     weight: weight
                 }
                 contract.insert(target, updatedUser);
+                return weight;
             }
         }
+        throw new Error("You are not admin");
     }),
 
     //set reputation
-    setReputation: update([Principal, int32], Void, (target, rep) => {
-        if(ic.caller() == admin) {
+    setReputation: update([Principal, int32], int32, (target, rep) => {
+        if(ic.caller().toText() == admin) {
             reputation.insert(target, rep);
+            return rep;
         }
+        throw new Error("You are not admin");
     }),
 
+    //set threshold
+    setThreshold: update([int32], int32, (thres) => {
+        if(ic.caller().toText() == admin) {
+            threshold = thres;
+            return thres;
+        }
+        throw new Error("You are not admin");
+    }),
+
+    //get all malicious contract
+    getAllMalicious: query([], Vec(Principal), () => {
+        return contract.keys();
+    }),
+
+    //get all user that have reputation
+    getAllUser: query([], Vec(Principal), () => {
+        return reputation.keys();
+    }),
+
+    isAdmin: query([], bool, () => {
+        return ic.caller().toText() == admin;
+    }),
 
 });
