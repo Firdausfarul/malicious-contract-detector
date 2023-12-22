@@ -1,0 +1,12 @@
+{
+    "canisters": {
+        "malicious-contract-detector": {
+            "type": "custom",
+            "main": "src/index.ts",
+            "build": "npx azle malicious-contract-detector",
+            "candid": "src/index.did",
+            "wasm": ".azle/malicious-contract-detector/malicious-contract-detector.wasm",
+            "gzip": true
+        }
+    }
+}

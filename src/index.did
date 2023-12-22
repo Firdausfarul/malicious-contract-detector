@@ -1,0 +1,8 @@
+service: () -> {
+    getReputation: (principal) -> (int32) query;
+    getWeight: (principal) -> (int32) query;
+    isMalicious: (principal) -> (bool) query;
+    report: (principal) -> ();
+    yourPrincipal: () -> (principal) query;
+    yourReputation: () -> (int32) query;
+}
