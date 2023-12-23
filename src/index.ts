@@ -1,4 +1,4 @@
-import { Canister, ic, query, text,int32, update, Void, Principal, Record, Vec, StableBTreeMap , bool, nat, AzleInt32} from 'azle';
+import { Canister, ic, query, text,int32, update, Void, Principal, Record, Vec, StableBTreeMap , bool, init, nat, AzleInt32, Ok, Result, Err} from 'azle';
 
 // use hardcoded admin for now
 let admin : text = "2vxsx-fae";
@@ -9,9 +9,14 @@ const Entry = Record({
     reporter: Vec(Principal),
     weight : int32
 });
+const EntryReputation = Record({
+    //list of who submitted the report
+    principals: Vec(Principal),
+    reputation : int32
+});
 
 // user reputation, the higher the better, user report will be based weighted on this
-let reputation = StableBTreeMap(Principal, int32 ,0);
+let reputation = StableBTreeMap(Principal, EntryReputation ,0);
 //base reputation is 1
 
 // list of malicious contract
@@ -20,25 +25,33 @@ let contract = StableBTreeMap(Principal, Entry, 1);
 //contract
 export default Canister({
 
+    init: init([], () => {
+        admin = ic.caller().toString();
+    }),
+
     // report a contract
-    report: update([Principal], int32, (reported) => {
+    report: update([Principal], Result(int32, text), (reported) => {
         if(contract.containsKey(reported)) {
-            let entry = contract.get(reported).Some;
-            let newWeight : int32 = reputation.containsKey(ic.caller()) ? entry.weight + reputation.get(ic.caller()).Some : entry.weight + 1;
+            let entry: typeof Entry = contract.get(reported).Some;
+            // ensures a principal can only report another user once
+            if (entry.reporter.findIndex(reporter => reporter.toText() === ic.caller().toText()) >= 0){
+                return Err("You have already reported the user")
+            }
+            let newWeight : int32 = reputation.containsKey(ic.caller()) ? entry.weight + reputation.get(ic.caller()).Some.reputation : entry.weight + 1;
             const updatedUser: typeof Entry = {
                 reporter: [...entry.reporter, ic.caller()],
                 weight: newWeight 
             }
             contract.insert(reported, updatedUser);
-            return newWeight;
+            return Ok(newWeight);
         } else {
-            let newWeight : int32 = reputation.containsKey(ic.caller()) ? reputation.get(ic.caller()).Some : 1;
+            let newWeight : int32 = reputation.containsKey(ic.caller()) ? reputation.get(ic.caller()).Some.reputation : 1;
             const updatedUser: typeof Entry = {
                 reporter: [ic.caller()],
                 weight: newWeight
             }
             contract.insert(reported, updatedUser);
-            return newWeight;
+            return Ok(newWeight);
         }
 
     }),
@@ -46,7 +59,7 @@ export default Canister({
     //getter function for reputation
     getReputation: query([Principal], int32, (target) => {
         if(reputation.containsKey(target)) {
-            return reputation.get(target).Some;
+            return reputation.get(target).Some.reputation;
         }
         return 1;
     }),
@@ -74,7 +87,7 @@ export default Canister({
     //get your reputation
     yourReputation: query([], int32, () => {
         if(reputation.containsKey(ic.caller())) {
-            return reputation.get(ic.caller()).Some;
+            return reputation.get(ic.caller()).Some.reputation;
         }
         return 1;
     }),
@@ -89,27 +102,39 @@ export default Canister({
         return admin;
     }),
 
-    reccomend: update([Principal], int32, (target) => {
+    recommend: update([Principal], Result(int32, text), (target) => {
         if(reputation.containsKey(ic.caller())) {
             //if target already has reputation, add 1 to their reputation
             if(reputation.containsKey(target)) {
-                let entry = reputation.get(ic.caller()).Some;
-                reputation.insert(target, entry + 1);
-                return entry + 1;
+                let entry : typeof EntryReputation = reputation.get(target).Some;
+                // ensures a principal can only recommend another user once
+                if (entry.principals.findIndex(principal => principal.toText() === ic.caller().toText()) >= 0){
+                    return Err("You have already recommended the user")
+                }
+                let updatedEntry: typeof EntryReputation = {
+                    principals: [...entry.principals, ic.caller()],
+                    reputation: entry.reputation + 1
+                }
+                reputation.insert(target, updatedEntry);
+                return Ok(updatedEntry.reputation);
             } 
             //if target doesn't have reputation, give them 2 as init value
             else {
-                reputation.insert(target, 2);
-                return 2;
+                let entry: typeof EntryReputation = {
+                    principals: [ic.caller()],
+                    reputation: 2
+                }
+                reputation.insert(target, entry);
+                return Ok(entry.reputation);
             }
         }
         //return 0 if you/sender don't have reputation 
-        throw new Error("You don't have reputation");
+        return Err("You don't have reputation");
     }),
 
     //admin function
     //set weight
-    setWeight: update([Principal, int32], int32, (target, weight) => {
+    setWeight: update([Principal, int32], Result(int32, text), (target, weight) => {
         if(ic.caller().toText() == admin) {
             if(contract.containsKey(target)) {
                 let entry = contract.get(target).Some;
@@ -118,35 +143,48 @@ export default Canister({
                     weight: weight
                 }
                 contract.insert(target, updatedUser);
-                return weight;
+                return Ok(weight);
             } else {
                 const updatedUser: typeof Entry = {
                     reporter: [],
                     weight: weight
                 }
                 contract.insert(target, updatedUser);
-                return weight;
+                return Ok(weight);
             }
         }
-        throw new Error("You are not admin");
+        return Err("You are not admin");
     }),
 
     //set reputation
-    setReputation: update([Principal, int32], int32, (target, rep) => {
+    setReputation: update([Principal, int32], Result(int32, text), (target, rep) => {
         if(ic.caller().toText() == admin) {
-            reputation.insert(target, rep);
-            return rep;
+            let entry : typeof EntryReputation;
+            if (reputation.containsKey(target)){
+                let fetchedEntry : typeof EntryReputation = reputation.get(target).Some;
+                entry = {
+                    principals: [...fetchedEntry.principals, ic.caller()],
+                    reputation: rep
+                }
+            }else{
+                entry = {
+                    principals: [ic.caller()],
+                    reputation: rep
+                }
+            }
+            reputation.insert(target, entry);
+            return Ok(rep);
         }
-        throw new Error("You are not admin");
+        return Err("You are not admin");
     }),
 
     //set threshold
-    setThreshold: update([int32], int32, (thres) => {
+    setThreshold: update([int32], Result(int32, text), (thres) => {
         if(ic.caller().toText() == admin) {
             threshold = thres;
-            return thres;
+            return Ok(thres);
         }
-        throw new Error("You are not admin");
+        return Err("You are not admin");
     }),
 
     //get all malicious contract

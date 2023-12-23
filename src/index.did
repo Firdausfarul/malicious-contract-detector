@@ -1,16 +1,16 @@
 service: () -> {
-    getAdmin: () -> (principal) query;
+    getAdmin: () -> (text) query;
     getAllMalicious: () -> (vec principal) query;
     getAllUser: () -> (vec principal) query;
     getReputation: (principal) -> (int32) query;
     getWeight: (principal) -> (int32) query;
     isAdmin: () -> (bool) query;
     isMalicious: (principal) -> (bool) query;
-    reccomend: (principal) -> (int32);
-    report: (principal) -> (int32);
-    setReputation: (principal, int32) -> (int32);
-    setThreshold: (int32) -> (int32);
-    setWeight: (principal, int32) -> (int32);
+    recommend: (principal) -> (variant {Ok:int32; Err:text});
+    report: (principal) -> (variant {Ok:int32; Err:text});
+    setReputation: (principal, int32) -> (variant {Ok:int32; Err:text});
+    setThreshold: (int32) -> (variant {Ok:int32; Err:text});
+    setWeight: (principal, int32) -> (variant {Ok:int32; Err:text});
     yourPrincipal: () -> (principal) query;
     yourReputation: () -> (int32) query;
 }
